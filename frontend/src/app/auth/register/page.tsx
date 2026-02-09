@@ -24,14 +24,13 @@ export default function RegisterPage() {
     setError(null);
     setIsSubmitting(true);
     try {
-      const { accessToken } = await register({
+      await register({
         email,
         password,
         profileType,
         displayName,
         companyName: profileType === "BUSINESS" ? companyName : undefined
       });
-      localStorage.setItem("pj_token", accessToken);
       router.replace("/dashboard");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Registration failed");

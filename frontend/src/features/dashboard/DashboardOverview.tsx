@@ -1,16 +1,56 @@
-const stats = [
-  { label: "Active jobs", value: 0, note: "2 awaiting updates" },
-  { label: "Offers sent", value: 0, note: "3 viewed today" },
-  { label: "Unread messages", value: 0, note: "Last message 2h ago" }
-];
+"use client";
 
-const quickActions = [
-  "Create a new job request",
-  "Review active offers",
-  "Update your service profile"
-];
+import { useEffect, useMemo, useState } from "react";
+import type { Message } from "@puna-jote/shared";
+import { fetchJobs, type JobListItem } from "@/services/jobsService";
+import { fetchThreads } from "@/services/messagesService";
+import { fetchMe } from "@/services/usersService";
+
+const quickActions = ["Create a new job request", "Review active offers", "Update your service profile"];
 
 export function DashboardOverview() {
+  const [userId, setUserId] = useState<string | null>(null);
+  const [jobs, setJobs] = useState<JobListItem[]>([]);
+  const [threads, setThreads] = useState<Message[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    Promise.all([fetchMe(), fetchJobs(), fetchThreads()])
+      .then(([me, jobList, threadMessages]) => {
+        if (!active) return;
+        setUserId(me.id);
+        setJobs(jobList);
+        setThreads(threadMessages);
+        setError(null);
+      })
+      .catch((err: unknown) => {
+        if (!active) return;
+        setError(err instanceof Error ? err.message : "Failed to load dashboard data");
+      })
+      .finally(() => {
+        if (!active) return;
+        setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const stats = useMemo(() => {
+    const unread = userId
+      ? threads.filter((message) => message.status === "SENT" && message.receiverId === userId).length
+      : 0;
+    return [
+      { label: "Jobs available", value: jobs.length, note: "Latest opportunities" },
+      { label: "Messages", value: threads.length, note: "Active threads" },
+      { label: "Unread messages", value: unread, note: "Needs attention" }
+    ];
+  }, [jobs, threads]);
+
   const hasActivity = stats.some((item) => item.value > 0);
 
   return (
@@ -33,12 +73,16 @@ export function DashboardOverview() {
                 className="rounded-2xl border border-black/5 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
               >
                 <p className="text-xs uppercase tracking-[0.2em] text-black/40">{item.label}</p>
-                <p className="mt-3 text-2xl font-semibold text-ink">{item.value}</p>
+                <p className="mt-3 text-2xl font-semibold text-ink">{loading ? "-" : item.value}</p>
                 <p className="mt-2 text-xs text-black/50">{item.note}</p>
               </div>
             ))}
           </div>
-          {!hasActivity ? (
+          {error ? (
+            <div className="mt-6 rounded-2xl border border-red-200 bg-red-50 px-4 py-4 text-sm text-red-700">
+              {error}
+            </div>
+          ) : !hasActivity && !loading ? (
             <div className="mt-6 rounded-2xl border border-dashed border-black/10 bg-white/60 px-4 py-4 text-sm text-black/60">
               No activity yet. Create your first request to start receiving offers.
             </div>

@@ -19,8 +19,7 @@ export default function LoginPage() {
     setError(null);
     setIsSubmitting(true);
     try {
-      const { accessToken } = await login(email, password);
-      localStorage.setItem("pj_token", accessToken);
+      await login(email, password);
       router.replace("/dashboard");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");

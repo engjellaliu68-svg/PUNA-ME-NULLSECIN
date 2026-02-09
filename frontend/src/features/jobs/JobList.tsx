@@ -1,36 +1,67 @@
+"use client";
+
 import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
+import { fetchJobs, type JobListItem } from "@/services/jobsService";
 
-const mockJobs = [
-  {
-    id: "1",
-    title: "Website redesign for local bakery",
-    city: "Pristina",
-    budget: "250 - 400 EUR",
-    tag: "Design",
-    timeline: "2 weeks"
-  },
-  {
-    id: "2",
-    title: "Plumbing repair for apartment",
-    city: "Prizren",
-    budget: "80 - 150 EUR",
-    tag: "Home repairs",
-    timeline: "Today"
-  },
-  {
-    id: "3",
-    title: "Social media launch pack",
-    city: "Peja",
-    budget: "200 - 320 EUR",
-    tag: "Marketing",
-    timeline: "1 week"
+const defaultCategories = ["All", "Design", "Home repairs", "Tech", "Education", "Events"];
+
+const formatBudget = (job: JobListItem) => {
+  const min = job.budgetMin ?? null;
+  const max = job.budgetMax ?? null;
+  if (min && max) {
+    return `${min} - ${max} EUR`;
   }
-];
-
-const categories = ["All", "Design", "Home repairs", "Tech", "Education", "Events"];
+  if (min) {
+    return `From ${min} EUR`;
+  }
+  if (max) {
+    return `Up to ${max} EUR`;
+  }
+  return "Budget not set";
+};
 
 export function JobList() {
-  const hasJobs = mockJobs.length > 0;
+  const [jobs, setJobs] = useState<JobListItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    fetchJobs()
+      .then((data) => {
+        if (active) {
+          setJobs(data);
+          setError(null);
+        }
+      })
+      .catch((err: unknown) => {
+        if (active) {
+          setError(err instanceof Error ? err.message : "Failed to load jobs");
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const hasJobs = jobs.length > 0;
+  const categories = useMemo(() => {
+    const names = new Set<string>();
+    jobs.forEach((job) => {
+      if (job.category?.name) {
+        names.add(job.category.name);
+      }
+    });
+    return names.size ? ["All", ...Array.from(names)] : defaultCategories;
+  }, [jobs]);
 
   return (
     <section className="space-y-8">
@@ -67,16 +98,25 @@ export function JobList() {
             Filters
           </button>
         </div>
+        {error ? (
+          <p className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {error}
+          </p>
+        ) : null}
       </div>
 
       <div className="grid gap-8 lg:grid-cols-[1.2fr_0.8fr]">
         <div className="space-y-4">
           <div className="flex items-center justify-between text-sm text-black/60">
-            <span>{mockJobs.length} opportunities</span>
+            <span>{jobs.length} opportunities</span>
             <span>Sorted by newest</span>
           </div>
-          {hasJobs ? (
-            mockJobs.map((job, index) => (
+          {loading ? (
+            <div className="rounded-3xl border border-dashed border-black/10 bg-white/60 p-6 text-sm text-black/60">
+              Loading jobs...
+            </div>
+          ) : hasJobs ? (
+            jobs.map((job, index) => (
               <Link
                 key={job.id}
                 href={`/jobs/${job.id}`}
@@ -84,14 +124,16 @@ export function JobList() {
               >
                 <div className="flex items-start justify-between gap-6">
                   <div>
-                    <p className="text-xs uppercase tracking-[0.2em] text-black/40">{job.tag}</p>
+                    <p className="text-xs uppercase tracking-[0.2em] text-black/40">
+                      {job.category?.name ?? "General"}
+                    </p>
                     <h2 className="mt-2 text-lg font-semibold text-ink">{job.title}</h2>
                     <p className="mt-2 text-sm text-black/60">
-                      {job.city} · {job.budget}
+                      {job.city ?? "Remote"} · {formatBudget(job)}
                     </p>
                   </div>
                   <span className="rounded-full bg-ink px-3 py-1 text-xs font-semibold text-white">
-                    {job.timeline}
+                    {job.status}
                   </span>
                 </div>
               </Link>

@@ -1,9 +1,13 @@
 import { JobDetails } from "@/features/jobs/JobDetails";
 
-export default function JobDetailsPage() {
+type JobDetailsPageProps = {
+  params: { id: string };
+};
+
+export default function JobDetailsPage({ params }: JobDetailsPageProps) {
   return (
     <main className="mx-auto max-w-6xl px-6 py-12">
-      <JobDetails />
+      <JobDetails jobId={params.id} />
     </main>
   );
 }

@@ -1,19 +1,19 @@
 "use client";
 
 import { useEffect } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
+import { refreshAccessToken } from "@/services/authService";
 
 export default function OAuthCallbackPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
 
   useEffect(() => {
-    const token = searchParams.get("token");
-    if (token) {
-      localStorage.setItem("pj_token", token);
-    }
-    router.replace("/dashboard");
-  }, [router, searchParams]);
+    refreshAccessToken()
+      .catch(() => null)
+      .finally(() => {
+        router.replace("/dashboard");
+      });
+  }, [router]);
 
   return (
     <main className="mx-auto max-w-md px-6 py-16">

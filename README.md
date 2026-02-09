@@ -52,6 +52,10 @@ Categories
 - Start Postgres: docker compose up -d
 - Run migrations: npm --workspace backend run prisma:migrate
 
+## Production Deploy
+- Ensure all required backend env vars are set before boot.
+- Run migrations during deploy: npm --workspace backend run prisma:migrate:deploy
+
 ## Database
 - Configure backend/.env with DATABASE_URL and JWT_SECRET.
 - Run Prisma migrations from backend.

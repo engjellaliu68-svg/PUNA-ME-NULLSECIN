@@ -1,22 +1,31 @@
 import { useEffect, useState } from "react";
+import { getAccessToken, setAccessToken } from "@/services/api";
+import { refreshAccessToken } from "@/services/authService";
 
 export function useAuth() {
-  const [token, setToken] = useState<string | null>(null);
+  const [token, setToken] = useState<string | null>(getAccessToken());
 
   useEffect(() => {
-    const stored = localStorage.getItem("pj_token");
-    if (stored) {
-      setToken(stored);
-    }
+    let active = true;
+    refreshAccessToken()
+      .then((nextToken) => {
+        if (!active) return;
+        setAccessToken(nextToken ?? null);
+        setToken(nextToken ?? null);
+      })
+      .catch(() => {
+        if (!active) return;
+        setAccessToken(null);
+        setToken(null);
+      });
+    return () => {
+      active = false;
+    };
   }, []);
 
   const updateToken = (value: string | null) => {
+    setAccessToken(value);
     setToken(value);
-    if (value) {
-      localStorage.setItem("pj_token", value);
-    } else {
-      localStorage.removeItem("pj_token");
-    }
   };
 
   return {

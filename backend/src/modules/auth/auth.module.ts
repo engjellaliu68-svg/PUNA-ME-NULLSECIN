@@ -6,13 +6,14 @@ import { AuthService } from "./auth.service";
 import { FacebookStrategy } from "./strategies/facebook.strategy";
 import { JwtStrategy } from "./strategies/jwt.strategy";
 import { GoogleStrategy } from "./strategies/google.strategy";
+import { requireEnv } from "../../common/env";
 
 @Module({
   imports: [
     PassportModule,
     JwtModule.register({
-      secret: process.env.JWT_SECRET || "replace_me",
-      signOptions: { expiresIn: process.env.JWT_EXPIRES_IN || "15m" }
+      secret: requireEnv("JWT_SECRET"),
+      signOptions: { expiresIn: requireEnv("JWT_EXPIRES_IN") }
     })
   ],
   controllers: [AuthController],

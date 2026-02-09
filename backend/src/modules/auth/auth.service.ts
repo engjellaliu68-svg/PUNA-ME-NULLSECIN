@@ -1,10 +1,12 @@
 import { BadRequestException, Injectable, UnauthorizedException } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import * as bcrypt from "bcrypt";
+import { randomUUID } from "crypto";
 import { ProfileType } from "@puna-jote/shared";
 import { PrismaService } from "../../prisma/prisma.service";
 import { LoginDto } from "./dto/login.dto";
 import { RegisterDto } from "./dto/register.dto";
+import { requireEnv } from "../../common/env";
 
 type OAuthUser = {
   provider: "GOOGLE" | "FACEBOOK";
@@ -13,12 +15,21 @@ type OAuthUser = {
   displayName?: string;
 };
 
+type RefreshPayload = {
+  sub: string;
+  jti: string;
+};
+
 @Injectable()
 export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService
   ) {}
+
+  getRefreshTokenMaxAgeMs() {
+    return this.parseExpiresIn(requireEnv("JWT_REFRESH_EXPIRES_IN"));
+  }
 
   async register(dto: RegisterDto) {
     const existing = await this.prisma.user.findUnique({ where: { email: dto.email } });
@@ -41,13 +52,7 @@ export class AuthService {
       }
     });
 
-    const accessToken = this.jwtService.sign({
-      sub: user.id,
-      email: user.email,
-      role: user.role
-    });
-
-    return { accessToken };
+    return this.issueTokens(user.id, user.email, user.role);
   }
 
   async login(dto: LoginDto) {
@@ -61,13 +66,7 @@ export class AuthService {
       throw new UnauthorizedException("Invalid credentials");
     }
 
-    const accessToken = this.jwtService.sign({
-      sub: user.id,
-      email: user.email,
-      role: user.role
-    });
-
-    return { accessToken };
+    return this.issueTokens(user.id, user.email, user.role);
   }
 
   async oauthLogin(rawUser: unknown) {
@@ -118,15 +117,140 @@ export class AuthService {
       });
     }
 
-    const accessToken = this.jwtService.sign({
-      sub: user.id,
-      email: user.email,
-      role: user.role
+    const origin = requireEnv("APP_ORIGIN");
+    const redirectUrl = new URL("/auth/callback", origin);
+    const tokens = await this.issueTokens(user.id, user.email, user.role);
+    return {
+      redirectUrl: redirectUrl.toString(),
+      refreshToken: tokens.refreshToken
+    };
+  }
+
+  async refreshSession(rawRefreshToken: string | null) {
+    if (!rawRefreshToken) {
+      throw new UnauthorizedException("Refresh token missing");
+    }
+
+    let payload: RefreshPayload;
+    try {
+      payload = this.jwtService.verify(rawRefreshToken, {
+        secret: requireEnv("JWT_REFRESH_SECRET")
+      }) as RefreshPayload;
+    } catch {
+      throw new UnauthorizedException("Invalid refresh token");
+    }
+
+    const existingToken = await this.prisma.refreshToken.findUnique({
+      where: { id: payload.jti }
     });
 
-    const origin = process.env.APP_ORIGIN || "http://localhost:3000";
-    const redirectUrl = new URL("/auth/callback", origin);
-    redirectUrl.searchParams.set("token", accessToken);
-    return redirectUrl.toString();
+    if (!existingToken || existingToken.userId !== payload.sub) {
+      throw new UnauthorizedException("Refresh token not recognized");
+    }
+
+    if (existingToken.revokedAt || existingToken.expiresAt <= new Date()) {
+      throw new UnauthorizedException("Refresh token expired");
+    }
+
+    const matches = await bcrypt.compare(rawRefreshToken, existingToken.tokenHash);
+    if (!matches) {
+      throw new UnauthorizedException("Refresh token invalid");
+    }
+
+    await this.prisma.refreshToken.update({
+      where: { id: existingToken.id },
+      data: { revokedAt: new Date() }
+    });
+
+    const user = await this.prisma.user.findUnique({ where: { id: payload.sub } });
+    if (!user) {
+      throw new UnauthorizedException("User not found");
+    }
+
+    return this.issueTokens(user.id, user.email, user.role);
+  }
+
+  async revokeRefreshToken(rawRefreshToken: string | null) {
+    if (!rawRefreshToken) {
+      return;
+    }
+
+    let payload: RefreshPayload | null = null;
+    try {
+      payload = this.jwtService.verify(rawRefreshToken, {
+        secret: requireEnv("JWT_REFRESH_SECRET")
+      }) as RefreshPayload;
+    } catch {
+      payload = null;
+    }
+
+    if (!payload?.jti) {
+      return;
+    }
+
+    await this.prisma.refreshToken.updateMany({
+      where: { id: payload.jti, revokedAt: null },
+      data: { revokedAt: new Date() }
+    });
+  }
+
+  private async issueTokens(userId: string, email: string, role: string) {
+    const accessToken = this.jwtService.sign(
+      { sub: userId, email, role },
+      {
+        secret: requireEnv("JWT_SECRET"),
+        expiresIn: requireEnv("JWT_EXPIRES_IN")
+      }
+    );
+
+    const refreshToken = await this.createRefreshToken(userId);
+
+    return {
+      accessToken,
+      refreshToken
+    };
+  }
+
+  private async createRefreshToken(userId: string) {
+    const tokenId = randomUUID();
+    const expiresAt = new Date(Date.now() + this.parseExpiresIn(requireEnv("JWT_REFRESH_EXPIRES_IN")));
+    const refreshToken = this.jwtService.sign(
+      { sub: userId, jti: tokenId },
+      {
+        secret: requireEnv("JWT_REFRESH_SECRET"),
+        expiresIn: requireEnv("JWT_REFRESH_EXPIRES_IN")
+      }
+    );
+    const tokenHash = await bcrypt.hash(refreshToken, 10);
+
+    await this.prisma.refreshToken.create({
+      data: {
+        id: tokenId,
+        userId,
+        tokenHash,
+        expiresAt
+      }
+    });
+
+    return refreshToken;
+  }
+
+  private parseExpiresIn(value: string) {
+    const match = value.match(/^(\d+)([smhd])$/);
+    if (!match) {
+      throw new Error(`Invalid expires format: ${value}`);
+    }
+    const amount = Number(match[1]);
+    const unit = match[2];
+    if (!amount || amount <= 0) {
+      throw new Error(`Invalid expires value: ${value}`);
+    }
+    const multipliers: Record<string, number> = {
+      s: 1000,
+      m: 60_000,
+      h: 3_600_000,
+      d: 86_400_000
+    };
+    return amount * multipliers[unit];
   }
 }
