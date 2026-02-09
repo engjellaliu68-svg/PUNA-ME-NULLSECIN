@@ -1,0 +1,183 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  USER
+  PROVIDER
+  ADMIN
+}
+
+enum ProfileType {
+  INDIVIDUAL
+  BUSINESS
+}
+
+enum JobStatus {
+  OPEN
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum JobLocationType {
+  ONLINE
+  ONSITE
+  HYBRID
+}
+
+enum OfferStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  WITHDRAWN
+}
+
+enum MessageStatus {
+  SENT
+  READ
+}
+
+enum OAuthProvider {
+  GOOGLE
+  FACEBOOK
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String?
+  role         UserRole @default(USER)
+  isActive     Boolean  @default(true)
+  profile      Profile?
+  oauthAccounts OAuthAccount[]
+  jobs         Job[]
+  offers       Offer[]  @relation("ProviderOffers")
+  sentMessages Message[] @relation("SentMessages")
+  receivedMessages Message[] @relation("ReceivedMessages")
+  reviewsGiven Review[] @relation("ReviewsGiven")
+  reviewsReceived Review[] @relation("ReviewsReceived")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([role])
+}
+
+model OAuthAccount {
+  id             String        @id @default(cuid())
+  userId         String
+  provider       OAuthProvider
+  providerUserId String
+  email          String?
+  user           User          @relation(fields: [userId], references: [id])
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@unique([provider, providerUserId])
+  @@index([userId])
+}
+
+model Profile {
+  id          String      @id @default(cuid())
+  userId      String      @unique
+  type        ProfileType
+  displayName String
+  companyName String?
+  bio         String?
+  phone       String?
+  city        String?
+  country     String?     @default("Kosovo")
+  user        User        @relation(fields: [userId], references: [id])
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+}
+
+model Category {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  slug      String   @unique
+  jobs      Job[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Job {
+  id           String           @id @default(cuid())
+  userId       String
+  categoryId   String
+  title        String
+  description  String
+  city         String?
+  locationType JobLocationType
+  budgetMin    Int?
+  budgetMax    Int?
+  status       JobStatus        @default(OPEN)
+  user         User             @relation(fields: [userId], references: [id])
+  category     Category         @relation(fields: [categoryId], references: [id])
+  offers       Offer[]
+  messages     Message[]
+  reviews      Review[]
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  @@index([categoryId])
+  @@index([city])
+  @@index([locationType])
+  @@index([status])
+}
+
+model Offer {
+  id         String      @id @default(cuid())
+  jobId      String
+  providerId String
+  price      Int
+  message    String?
+  status     OfferStatus @default(PENDING)
+  job        Job         @relation(fields: [jobId], references: [id])
+  provider   User        @relation("ProviderOffers", fields: [providerId], references: [id])
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+
+  @@unique([jobId, providerId])
+  @@index([status])
+}
+
+model Message {
+  id         String        @id @default(cuid())
+  jobId      String
+  senderId   String
+  receiverId String
+  content    String
+  status     MessageStatus @default(SENT)
+  readAt     DateTime?
+  job        Job           @relation(fields: [jobId], references: [id])
+  sender     User          @relation("SentMessages", fields: [senderId], references: [id])
+  receiver   User          @relation("ReceivedMessages", fields: [receiverId], references: [id])
+  createdAt  DateTime      @default(now())
+
+  @@index([jobId])
+  @@index([senderId])
+  @@index([receiverId])
+}
+
+model Review {
+  id         String   @id @default(cuid())
+  jobId      String
+  reviewerId String
+  revieweeId String
+  rating     Int
+  comment    String?
+  job        Job      @relation(fields: [jobId], references: [id])
+  reviewer   User     @relation("ReviewsGiven", fields: [reviewerId], references: [id])
+  reviewee   User     @relation("ReviewsReceived", fields: [revieweeId], references: [id])
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([jobId, reviewerId])
+  @@index([revieweeId])
+}

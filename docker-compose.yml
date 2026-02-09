@@ -1,0 +1,17 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: puna-jote-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: puna_jote
+      POSTGRES_USER: puna_jote
+      POSTGRES_PASSWORD: puna_jote_dev
+    volumes:
+      - puna_jote_pgdata:/var/lib/postgresql/data
+
+volumes:
+  puna_jote_pgdata:
