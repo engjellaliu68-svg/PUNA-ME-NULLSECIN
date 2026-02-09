@@ -5,7 +5,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-function Require-Command {
+function Assert-Command {
   param([string]$Name, [string]$Hint)
   if (-not (Get-Command $Name -ErrorAction SilentlyContinue)) {
     Write-Host "Missing required tool: $Name" -ForegroundColor Red
@@ -14,8 +14,8 @@ function Require-Command {
   }
 }
 
-Require-Command "node" "Install Node.js LTS from https://nodejs.org or use winget: winget install OpenJS.NodeJS.LTS"
-Require-Command "npm" "npm is included with Node.js. Reinstall Node.js if npm is missing."
+Assert-Command "node" "Install Node.js LTS from https://nodejs.org or use winget: winget install OpenJS.NodeJS.LTS"
+Assert-Command "npm" "npm is included with Node.js. Reinstall Node.js if npm is missing."
 
 Write-Host "Installing workspace dependencies..." -ForegroundColor Cyan
 npm install
